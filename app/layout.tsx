@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Noto_Sans_KR, Outfit } from "next/font/google";
+import { AuthProvider } from "./auth/AuthContext";
 import "./globals.css";
 
 const notoSansKr = Noto_Sans_KR({
@@ -30,7 +31,7 @@ export default function RootLayout({
       <body
         className={`${notoSansKr.variable} ${outfit.variable} font-sans antialiased`}
       >
-        {children}
+        <AuthProvider>{children}</AuthProvider>
       </body>
     </html>
   );

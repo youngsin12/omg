@@ -1,4 +1,5 @@
 import Image from "next/image";
+import Link from "next/link";
 import UploadCard from "./components/UploadCard";
 import { getSupabaseConnectionStatus } from "./lib/supabase.server";
 
@@ -35,6 +36,12 @@ export default async function Home() {
               />
               Supabase {isSupabaseConnected ? "연결됨" : "확인 필요"}
             </span>
+            <Link
+              href="/dashboard"
+              className="hidden text-sm font-bold text-slate-600 hover:text-slate-950 sm:block"
+            >
+              내 작업실
+            </Link>
             <a
               href="#create"
               className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-slate-700"

@@ -18,6 +18,22 @@ SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
 The publishable key identifies the project but does not bypass RLS. Never expose a secret key,
 service-role key, database password, or `DATABASE_URL` in browser code.
 
+## Google OAuth
+
+The app includes:
+
+- `/login` with Google OAuth
+- cookie-based Supabase SSR sessions
+- global `AuthContext`
+- server and middleware protection for `/dashboard`
+- `/auth/callback` PKCE code exchange
+- logout from the protected dashboard
+
+In Supabase, enable the Google provider and allow
+`http://127.0.0.1:3010/auth/callback` as a Redirect URL. In Google Cloud, use the Supabase
+project callback shown on the Google provider page as the Authorized redirect URI. Keep the
+Google Client Secret only in Google Cloud and the Supabase dashboard.
+
 ## Server configuration
 
 `.env.local`에 아래 환경변수를 설정합니다. 실제 키를 문서나 Git에 저장하지 마세요.
