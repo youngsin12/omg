@@ -17,6 +17,8 @@ import {
   type GenerationMode,
 } from "../lib/generation";
 import { PRINT_SIZES, generatePhotoSheet, type PrintSize } from "../lib/photoSheet";
+import { createClient as createSupabaseClient } from "../lib/supabase/client";
+import { trackProductEvent } from "../lib/analytics/client";
 import CompareSlider from "./CompareSlider";
 
 interface GenerationResult {
@@ -27,6 +29,7 @@ interface GenerationResult {
   modelLabel: string;
   imageSize: "1K" | "2K";
   estimatedUsd: number;
+  generationJobId: string | null;
 }
 
 const LOADING_MESSAGES = [
@@ -56,6 +59,8 @@ export default function UploadCard() {
   const [usedStyleId, setUsedStyleId] = useState<string>("corporate");
   const [printSizeId, setPrintSizeId] = useState<string>(PRINT_SIZES[1].id);
   const [isSheetGenerating, setIsSheetGenerating] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [savedPhotoId, setSavedPhotoId] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -246,7 +251,100 @@ export default function UploadCard() {
     }
   };
 
+  const handleSave = async () => {
+    if (!result || isSaving || savedPhotoId) return;
+
+    setIsSaving(true);
+    setError(null);
+
+    const supabase = createSupabaseClient();
+    let uploadedPath: string | null = null;
+
+    try {
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError || !user) {
+        throw new Error("사진을 저장하려면 먼저 로그인해 주세요.");
+      }
+      if (!result.generationJobId) {
+        throw new Error(
+          "이 결과에는 저장 가능한 생성 기록이 없습니다. 로그인 후 새 사진을 생성해 주세요."
+        );
+      }
+
+      const imageResponse = await fetch(result.imageUrl);
+      if (!imageResponse.ok) {
+        throw new Error("생성 사진을 저장용 파일로 변환하지 못했습니다.");
+      }
+
+      const imageBlob = await imageResponse.blob();
+      if (!["image/jpeg", "image/png", "image/webp"].includes(imageBlob.type)) {
+        throw new Error("저장할 수 없는 이미지 형식입니다.");
+      }
+      if (imageBlob.size > 8 * 1024 * 1024) {
+        throw new Error("저장할 사진은 8MB 이하여야 합니다.");
+      }
+
+      const extension =
+        imageBlob.type === "image/jpeg"
+          ? "jpg"
+          : imageBlob.type === "image/webp"
+            ? "webp"
+            : "png";
+      uploadedPath = `${user.id}/${result.generationJobId}/${crypto.randomUUID()}.${extension}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("proshot-photos")
+        .upload(uploadedPath, imageBlob, {
+          contentType: imageBlob.type,
+          cacheControl: "3600",
+          upsert: false,
+        });
+
+      if (uploadError) {
+        throw new Error(`사진 파일 저장 실패: ${uploadError.message}`);
+      }
+
+      const { data: savedPhoto, error: recordError } = await supabase
+        .from("photo_assets")
+        .insert({
+          user_id: user.id,
+          generation_job_id: result.generationJobId,
+          storage_path: uploadedPath,
+          asset_type: "generated",
+          mime_type: imageBlob.type,
+          byte_size: imageBlob.size,
+        })
+        .select("id")
+        .single();
+
+      if (recordError) {
+        await supabase.storage.from("proshot-photos").remove([uploadedPath]);
+        uploadedPath = null;
+        throw new Error(`사진 기록 저장 실패: ${recordError.message}`);
+      }
+
+      setSavedPhotoId(savedPhoto.id);
+      await trackProductEvent("photo_saved", result.generationJobId);
+    } catch (caughtError) {
+      console.error(caughtError);
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "사진 저장 중 오류가 발생했습니다."
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const resetForNewStyle = () => {
+    if (result?.generationJobId) {
+      void trackProductEvent("style_regenerated", result.generationJobId);
+    }
     setResult(null);
     setError(null);
     // keep the selfie — user just wants a different style
@@ -343,17 +441,41 @@ export default function UploadCard() {
             <a
               href={result.imageUrl}
               download={`proshot_${result.mode}_${usedStyleId}.png`}
+              onClick={() =>
+                void trackProductEvent(
+                  "photo_download_clicked",
+                  result.generationJobId
+                )
+              }
               className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold py-3 px-4 rounded-xl text-center flex items-center justify-center gap-1.5 transition-colors"
             >
               다운로드
             </a>
             <button
-              onClick={() => handleShare(result.imageUrl, usedLabel)}
+              onClick={() => {
+                void trackProductEvent(
+                  "photo_share_clicked",
+                  result.generationJobId
+                );
+                void handleShare(result.imageUrl, usedLabel);
+              }}
               className="bg-white border border-slate-200 hover:border-indigo-300 hover:text-indigo-600 text-slate-600 text-xs font-bold py-3 px-4 rounded-xl transition-colors"
             >
               공유
             </button>
           </div>
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={isSaving || Boolean(savedPhotoId)}
+            className="mt-2 w-full rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-bold text-emerald-700 transition-colors hover:bg-emerald-100 disabled:cursor-default disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-500"
+          >
+            {isSaving
+              ? "Supabase에 저장 중..."
+              : savedPhotoId
+                ? "저장 완료 · 대시보드에서 확인"
+                : "Supabase에 안전하게 저장"}
+          </button>
         </div>
 
         {/* Before / After Slider */}

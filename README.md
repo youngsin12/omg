@@ -11,6 +11,10 @@ blocks browser writes. Images, prompts, IP addresses, and user data are not stor
 Copy `.env.example` to `.env.local` and configure:
 
 ```text
+NEXT_PUBLIC_SUPABASE_URL=https://your-project-ref.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_...
+
+# Optional server-side aliases used by the home-page connection check
 SUPABASE_URL=https://your-project-ref.supabase.co
 SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
 ```
@@ -29,10 +33,39 @@ The app includes:
 - `/auth/callback` PKCE code exchange
 - logout from the protected dashboard
 
-In Supabase, enable the Google provider and allow
-`http://127.0.0.1:3010/auth/callback` as a Redirect URL. In Google Cloud, use the Supabase
-project callback shown on the Google provider page as the Authorized redirect URI. Keep the
-Google Client Secret only in Google Cloud and the Supabase dashboard.
+In Supabase, enable the Google provider and allow your app callback URL as a Redirect URL.
+For the default local Next.js dev server, add:
+`http://localhost:3000/auth/callback`
+
+If you run the app on a different origin, add that exact origin instead, for example:
+`http://127.0.0.1:3010/auth/callback`
+
+In Google Cloud, do not use your app callback URL. Use the Supabase project callback URL shown
+on the Google provider page as the Authorized redirect URI.
+Typical hosted-project format:
+`https://<project-ref>.supabase.co/auth/v1/callback`
+
+If Google login fails with `redirect_uri_mismatch`, compare the Google Cloud value above with the
+exact callback shown in the Supabase dashboard first.
+
+Keep the Google Client Secret only in Google Cloud and the Supabase dashboard.
+
+## Auth observability
+
+The auth flow writes structured JSON logs with `scope: "proshot.auth"`.
+Look for these events when debugging login failures:
+
+- `oauth_start_requested`
+- `oauth_start_failed`
+- `oauth_callback_received`
+- `oauth_callback_missing_code`
+- `oauth_code_exchange_failed`
+- `oauth_callback_redirected`
+- `session_check_failed`
+- `logout_failed`
+
+The callback error page also shows an error code and request ID so support can correlate a user
+report with server logs quickly.
 
 ## Server configuration
 
@@ -57,6 +90,7 @@ First, run the development server:
 ```bash
 npm run dev
 # or
+
 yarn dev
 # or
 pnpm dev

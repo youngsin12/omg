@@ -8,6 +8,7 @@ import {
 } from "../../lib/generation";
 import { parseImageDataUrl } from "../../lib/generation.server";
 import { buildPrompt, getStyle, type BgColor } from "../../lib/styles";
+import { createClient as createSupabaseClient } from "../../lib/supabase/server";
 import {
   consumeRateLimitEntry,
   reserveBudget,
@@ -222,6 +223,45 @@ export async function POST(req: NextRequest) {
     });
     const ai = new GoogleGenAI({ apiKey });
     const startedAt = Date.now();
+    let generationJobId: string | null = null;
+    let generationUserId: string | null = null;
+
+    try {
+      const supabase = await createSupabaseClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (user) {
+        generationUserId = user.id;
+        const { data: job, error: jobError } = await supabase
+          .from("generation_jobs")
+          .insert({
+            user_id: user.id,
+            status: "processing",
+            style_id: styleId,
+            generation_mode: mode,
+            model: modelOption.model,
+            estimated_cost_usd: modelOption.estimatedUsd,
+          })
+          .select("id")
+          .single();
+
+        if (jobError) {
+          console.warn("Generation job was not recorded:", {
+            requestId,
+            code: jobError.code,
+          });
+        } else {
+          generationJobId = job.id;
+        }
+      }
+    } catch (jobError) {
+      console.warn("Generation history is unavailable:", {
+        requestId,
+        error: jobError instanceof Error ? jobError.message : String(jobError),
+      });
+    }
 
     try {
       const interaction = await ai.interactions.create({
@@ -260,6 +300,27 @@ export async function POST(req: NextRequest) {
         success: true,
       });
 
+      if (generationJobId && generationUserId) {
+        try {
+          const supabase = await createSupabaseClient();
+          await supabase
+            .from("generation_jobs")
+            .update({
+              status: "completed",
+              processing_ms: durationMs,
+              completed_at: new Date().toISOString(),
+            })
+            .eq("id", generationJobId)
+            .eq("user_id", generationUserId);
+        } catch (jobError) {
+          console.warn("Generation completion was not recorded:", {
+            requestId,
+            generationJobId,
+            error: jobError instanceof Error ? jobError.message : String(jobError),
+          });
+        }
+      }
+
       return NextResponse.json({
         result: {
           imageUrl: `data:image/png;base64,${outputImage}`,
@@ -269,9 +330,33 @@ export async function POST(req: NextRequest) {
           modelLabel: modelOption.label,
           imageSize: modelOption.imageSize,
           estimatedUsd: modelOption.estimatedUsd,
+          generationJobId,
         },
       });
     } catch (error) {
+      const durationMs = Date.now() - startedAt;
+      if (generationJobId && generationUserId) {
+        try {
+          const supabase = await createSupabaseClient();
+          await supabase
+            .from("generation_jobs")
+            .update({
+              status: "failed",
+              processing_ms: durationMs,
+              error_code: "GEMINI_REQUEST_FAILED",
+              completed_at: new Date().toISOString(),
+            })
+            .eq("id", generationJobId)
+            .eq("user_id", generationUserId);
+        } catch (jobError) {
+          console.warn("Generation failure was not recorded:", {
+            requestId,
+            generationJobId,
+            error: jobError instanceof Error ? jobError.message : String(jobError),
+          });
+        }
+      }
+
       logGeneration("failed", {
         requestId,
         clientId,
@@ -279,7 +364,7 @@ export async function POST(req: NextRequest) {
         model: modelOption.model,
         styleId,
         inputBytes: image.byteLength,
-        durationMs: Date.now() - startedAt,
+        durationMs,
         estimatedUsd: modelOption.estimatedUsd,
         success: false,
       });

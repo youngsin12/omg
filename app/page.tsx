@@ -84,7 +84,7 @@ export default async function Home() {
             <figure>
               <div className="relative aspect-square overflow-hidden rounded-2xl bg-slate-100">
                 <Image
-                  src="/images/selfie_before.png"
+                  src="/images/selfie_before.jpg"
                   alt="변환 전 셀카"
                   fill
                   sizes="(max-width: 640px) 45vw, 320px"
@@ -98,7 +98,7 @@ export default async function Home() {
             <figure>
               <div className="relative aspect-square overflow-hidden rounded-2xl bg-slate-100">
                 <Image
-                  src="/images/profile_after.png"
+                  src="/images/profile_after.jpg"
                   alt="변환 후 프로필 사진"
                   fill
                   sizes="(max-width: 640px) 45vw, 320px"

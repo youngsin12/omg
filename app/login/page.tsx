@@ -1,12 +1,15 @@
 import Link from "next/link";
+import { getAuthErrorDisplay, isAuthErrorCode } from "../lib/auth/errors";
 import GoogleLoginButton from "./GoogleLoginButton";
 
 type LoginPageProps = {
-  searchParams: Promise<{ next?: string }>;
+  searchParams: Promise<{ next?: string; authError?: string }>;
 };
 
 export default async function LoginPage({ searchParams }: LoginPageProps) {
   const params = await searchParams;
+  const authErrorCode = isAuthErrorCode(params.authError) ? params.authError : null;
+  const authError = authErrorCode ? getAuthErrorDisplay(authErrorCode) : null;
 
   return (
     <main className="grid min-h-screen bg-slate-950 text-white lg:grid-cols-[1.1fr_0.9fr]">
@@ -48,6 +51,12 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
           <p className="mt-3 text-sm leading-6 text-slate-500">
             별도 비밀번호를 만들 필요 없이 Google 계정으로 안전하게 시작합니다.
           </p>
+          {authError ? (
+            <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              <p className="font-bold">{authError.title}</p>
+              <p className="mt-1 leading-6">{authError.description}</p>
+            </div>
+          ) : null}
           <div className="mt-8">
             <GoogleLoginButton next={params.next ?? null} />
           </div>

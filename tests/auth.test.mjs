@@ -7,6 +7,11 @@ test("safeNextPath accepts local paths", () => {
   assert.equal(safeNextPath("/dashboard?tab=recent"), "/dashboard?tab=recent");
 });
 
+test("safeNextPath rejects malformed internal-looking redirects", () => {
+  assert.equal(safeNextPath("/dashboard//evil"), "/dashboard");
+  assert.equal(safeNextPath("/%2Fexternal"), "/dashboard");
+});
+
 test("safeNextPath rejects external and protocol-relative redirects", () => {
   assert.equal(safeNextPath("https://evil.example"), "/dashboard");
   assert.equal(safeNextPath("//evil.example"), "/dashboard");
